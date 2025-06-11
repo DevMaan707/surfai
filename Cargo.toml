@@ -1,24 +1,70 @@
 [package]
 name = "browser-ragent"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+description = "A modular browser automation library designed for AI agents"
+license = "MIT"
+repository = "https://github.com/yourusername/browser-ragent"
+keywords = ["browser", "automation", "ai", "testing", "web"]
+categories = ["web-programming", "automation"]
 
 [dependencies]
-
+# Core async runtime
 tokio = { version = "1.0", features = ["full"] }
+async-trait = "0.1"
+
+# Browser automation
+headless_chrome = "1.0"
+
+# HTML parsing
+scraper = "0.18"
+
+# Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-anyhow = "1.0"
+
+# Error handling
 thiserror = "1.0"
-uuid = { version = "1.0", features = ["v4"] }
-headless_chrome = "1.0"
-scraper = "0.18"
-regex = "1.10"
-url = "2.5"
-tracing = "0.1"
-tracing-subscriber = "0.3"
+anyhow = "1.0"
+
+# Utilities
 base64 = "0.21"
+chrono = { version = "0.4", features = ["serde"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+clap = "4.0"
 
 
+# Testing
+tokio-test = { version = "0.4", optional = true }
+cla = "0.0.1"
+url = "2.5.4"
+uuid = { version = "1.8", features = ["v4"] }
+regex = "1.0"
 [dev-dependencies]
 tokio-test = "0.4"
+clap = "4.0"
+
+[features]
+default = ["chrome"]
+chrome = []
+testing = ["tokio-test"]
+
+[[example]]
+name = "simple_test"
+path = "examples/simple_test.rs"
+
+[[example]]
+name = "ai_automation"
+path = "examples/ai_automation.rs"
+
+[[example]]
+name = "google_search_demo"
+path = "examples/google_search_demo.rs"
+
+[[example]]
+name = "dynamic_monitoring_demo"
+path = "examples/dynamic_monitoring_demo.rs"
