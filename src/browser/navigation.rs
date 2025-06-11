@@ -1,6 +1,6 @@
 use crate::core::BrowserTrait;
 use crate::errors::Result;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 pub struct NavigationManager;
 
@@ -11,18 +11,15 @@ impl NavigationManager {
         timeout_ms: u64,
     ) -> Result<NavigationResult> {
         let start_time = Instant::now();
-        let timeout = Duration::from_millis(timeout_ms);
 
-        // Multi-layered navigation detection
+        // Dynamic, event-driven navigation detection
         let navigation_script = r#"
             (function() {
                 return new Promise((resolve) => {
                     let resolved = false;
-                    let networkIdle = false;
-                    let domReady = false;
-                    let loadComplete = false;
+                    let startTime = Date.now();
 
-                    const resolveOnce = (reason) => {
+                    const resolveOnce = (reason, additionalData = {}) => {
                         if (!resolved) {
                             resolved = true;
                             resolve({
@@ -30,147 +27,239 @@ impl NavigationManager {
                                 reason: reason,
                                 readyState: document.readyState,
                                 url: window.location.href,
-                                timestamp: Date.now()
+                                timestamp: Date.now(),
+                                loadTime: Date.now() - startTime,
+                                ...additionalData
                             });
                         }
                     };
 
-                    // Check current state
+                    // Immediate check - if page is already complete
                     if (document.readyState === 'complete') {
-                        loadComplete = true;
+                        // Double-check that resources are actually loaded
+                        if (document.body && document.body.children.length > 0) {
+                            resolveOnce('already_complete');
+                            return;
+                        }
                     }
 
-                    // DOM Content Loaded
-                    if (document.readyState === 'interactive' || document.readyState === 'complete') {
-                        domReady = true;
-                    }
+                    // Track network activity
+                    let pendingRequests = 0;
+                    let networkQuiet = false;
+                    let domReady = false;
+                    let imagesLoaded = false;
 
-                    // Network activity monitoring
-                    let requestCount = 0;
-                    let responseCount = 0;
-
-                    // Override fetch for monitoring
-                    const originalFetch = window.fetch;
-                    window.fetch = function(...args) {
-                        requestCount++;
-                        return originalFetch.apply(this, args).then(response => {
-                            responseCount++;
-                            return response;
-                        }).catch(error => {
-                            responseCount++;
-                            throw error;
-                        });
+                    // Monitor document ready state changes
+                    const checkReadyState = () => {
+                        if (document.readyState === 'interactive') {
+                            domReady = true;
+                            checkAllConditions('dom_interactive');
+                        } else if (document.readyState === 'complete') {
+                            domReady = true;
+                            checkAllConditions('dom_complete');
+                        }
                     };
 
-                    // Monitor XMLHttpRequest
-                    const originalXHROpen = XMLHttpRequest.prototype.open;
-                    XMLHttpRequest.prototype.open = function(...args) {
-                        requestCount++;
-                        this.addEventListener('loadend', () => {
-                            responseCount++;
-                        });
-                        return originalXHROpen.apply(this, args);
+                    // Monitor network requests
+                    const checkNetworkQuiet = () => {
+                        if (pendingRequests === 0) {
+                            networkQuiet = true;
+                            checkAllConditions('network_quiet');
+                        }
                     };
 
-                    // Check for network idle
-                    const checkNetworkIdle = () => {
-                        if (requestCount === responseCount) {
-                            networkIdle = true;
-                            if (domReady && networkIdle) {
-                                resolveOnce('network_idle_and_dom_ready');
+                    // Monitor image loading
+                    const checkImagesLoaded = () => {
+                        const images = document.querySelectorAll('img');
+                        let loadedImages = 0;
+
+                        if (images.length === 0) {
+                            imagesLoaded = true;
+                            checkAllConditions('no_images');
+                            return;
+                        }
+
+                        images.forEach(img => {
+                            if (img.complete || img.naturalHeight > 0) {
+                                loadedImages++;
+                            }
+                        });
+
+                        if (loadedImages === images.length) {
+                            imagesLoaded = true;
+                            checkAllConditions('images_loaded');
+                        }
+                    };
+
+                    // Check if all conditions are met
+                    const checkAllConditions = (trigger) => {
+                        // Primary condition: DOM is ready
+                        if (domReady) {
+                            // If we have basic content, we can proceed
+                            if (document.body && document.body.children.length > 0) {
+                                // For simple pages or when network is quiet, resolve immediately
+                                if (networkQuiet || document.readyState === 'complete') {
+                                    resolveOnce(`complete_${trigger}`, {
+                                        trigger,
+                                        hasContent: true,
+                                        networkQuiet,
+                                        imagesLoaded
+                                    });
+                                    return;
+                                }
+
+                                // For complex pages, wait a bit more but don't block indefinitely
+                                setTimeout(() => {
+                                    if (!resolved) {
+                                        resolveOnce(`timeout_${trigger}`, {
+                                            trigger,
+                                            hasContent: true,
+                                            networkQuiet,
+                                            imagesLoaded
+                                        });
+                                    }
+                                }, 1000);
                             }
                         }
                     };
 
-                    // Event listeners
+                    // Set up event listeners
+                    document.addEventListener('readystatechange', checkReadyState);
                     document.addEventListener('DOMContentLoaded', () => {
                         domReady = true;
-                        if (networkIdle) {
-                            resolveOnce('dom_content_loaded');
-                        }
+                        checkAllConditions('dom_content_loaded');
                     });
 
                     window.addEventListener('load', () => {
-                        loadComplete = true;
-                        setTimeout(() => {
-                            checkNetworkIdle();
-                            if (networkIdle || requestCount === 0) {
-                                resolveOnce('window_load_complete');
-                            }
-                        }, 100);
+                        domReady = true;
+                        imagesLoaded = true;
+                        networkQuiet = true;
+                        resolveOnce('window_load', {
+                            trigger: 'window_load',
+                            hasContent: document.body && document.body.children.length > 0,
+                            networkQuiet: true,
+                            imagesLoaded: true
+                        });
                     });
 
-                    // Periodic network check
-                    const networkCheck = setInterval(() => {
-                        checkNetworkIdle();
-                        if (networkIdle && domReady) {
-                            clearInterval(networkCheck);
-                            resolveOnce('periodic_network_check');
-                        }
-                    }, 100);
+                    // Monitor fetch requests
+                    const originalFetch = window.fetch;
+                    window.fetch = function(...args) {
+                        pendingRequests++;
+                        return originalFetch.apply(this, args)
+                            .finally(() => {
+                                pendingRequests--;
+                                setTimeout(checkNetworkQuiet, 100);
+                            });
+                    };
 
-                    // Fallback timeout
+                    // Monitor XHR requests
+                    const originalOpen = XMLHttpRequest.prototype.open;
+                    XMLHttpRequest.prototype.open = function(...args) {
+                        pendingRequests++;
+                        this.addEventListener('loadend', () => {
+                            pendingRequests--;
+                            setTimeout(checkNetworkQuiet, 100);
+                        });
+                        return originalOpen.apply(this, args);
+                    };
+
+                    // Initial checks
+                    checkReadyState();
+
+                    // Check images after a short delay to let them start loading
+                    setTimeout(checkImagesLoaded, 200);
+
+                    // Absolute fallback - never wait more than reasonable time
                     setTimeout(() => {
-                        clearInterval(networkCheck);
-                        resolveOnce('timeout_fallback');
-                    }, 10000);
-
-                    // Immediate check for already loaded pages
-                    if (loadComplete || document.readyState === 'complete') {
-                        setTimeout(() => {
-                            checkNetworkIdle();
-                            if (networkIdle || requestCount === 0) {
-                                resolveOnce('already_loaded');
-                            }
-                        }, 50);
-                    }
+                        if (!resolved) {
+                            resolveOnce('absolute_fallback', {
+                                trigger: 'timeout',
+                                hasContent: document.body && document.body.children.length > 0,
+                                networkQuiet,
+                                imagesLoaded,
+                                finalReadyState: document.readyState
+                            });
+                        }
+                    }, 8000);
                 });
             })()
         "#;
 
-        // Execute navigation detection
-        while start_time.elapsed() < timeout {
-            match browser.execute_script(tab, navigation_script).await {
-                Ok(result) => {
-                    if let Some(obj) = result.as_object() {
-                        if obj
-                            .get("success")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false)
-                        {
-                            return Ok(NavigationResult {
-                                success: true,
-                                reason: obj
-                                    .get("reason")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("unknown")
-                                    .to_string(),
-                                url: obj
-                                    .get("url")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string(),
-                                ready_state: obj
-                                    .get("readyState")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string(),
-                                duration_ms: start_time.elapsed().as_millis() as u64,
-                            });
-                        }
-                    }
-                }
-                Err(_) => {
-                    // Continue trying
-                }
-            }
+        // Execute the dynamic navigation detection
+        let result = browser.execute_script(tab, navigation_script).await?;
 
-            tokio::time::sleep(Duration::from_millis(50)).await;
+        if let Some(obj) = result.as_object() {
+            if obj
+                .get("success")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
+                let reason = obj
+                    .get("reason")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                let url = obj
+                    .get("url")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let ready_state = obj
+                    .get("readyState")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let load_time = obj.get("loadTime").and_then(|v| v.as_u64()).unwrap_or(0);
+
+                return Ok(NavigationResult {
+                    success: true,
+                    reason,
+                    url,
+                    ready_state,
+                    duration_ms: start_time.elapsed().as_millis() as u64,
+                    actual_load_time: load_time,
+                    network_quiet: obj
+                        .get("networkQuiet")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false),
+                    has_content: obj
+                        .get("hasContent")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false),
+                });
+            }
         }
 
-        Err(crate::errors::BrowserAgentError::TimeoutError(
-            "Navigation timeout".to_string(),
-        ))
+        // If script execution failed, use minimal fallback
+        Self::minimal_fallback(browser, tab).await
+    }
+
+    async fn minimal_fallback<B: BrowserTrait>(
+        browser: &B,
+        tab: &B::TabHandle,
+    ) -> Result<NavigationResult> {
+        let start_time = Instant::now();
+
+        // Just check if we can get URL and basic page info
+        let url = browser.get_url(tab).await.unwrap_or_default();
+
+        if !url.is_empty() && !url.starts_with("about:") {
+            Ok(NavigationResult {
+                success: true,
+                reason: "fallback_url_available".to_string(),
+                url,
+                ready_state: "unknown".to_string(),
+                duration_ms: start_time.elapsed().as_millis() as u64,
+                actual_load_time: 0,
+                network_quiet: false,
+                has_content: false,
+            })
+        } else {
+            Err(crate::errors::BrowserAgentError::NavigationFailed(
+                "Could not verify navigation success".to_string(),
+            ))
+        }
     }
 }
 
@@ -181,4 +270,30 @@ pub struct NavigationResult {
     pub url: String,
     pub ready_state: String,
     pub duration_ms: u64,
+    pub actual_load_time: u64,
+    pub network_quiet: bool,
+    pub has_content: bool,
+}
+
+impl NavigationResult {
+    pub fn is_fast_load(&self) -> bool {
+        self.actual_load_time < 1000
+    }
+
+    pub fn is_complete_load(&self) -> bool {
+        self.network_quiet && self.has_content && self.ready_state == "complete"
+    }
+
+    pub fn load_quality(&self) -> &str {
+        match (
+            self.has_content,
+            self.network_quiet,
+            self.ready_state.as_str(),
+        ) {
+            (true, true, "complete") => "excellent",
+            (true, true, _) => "good",
+            (true, false, _) => "partial",
+            (false, _, _) => "minimal",
+        }
+    }
 }

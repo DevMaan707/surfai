@@ -1,10 +1,10 @@
 [package]
-name = "browser-ragent"
+name = "surfai"
 version = "0.1.0"
 edition = "2021"
 description = "A modular browser automation library designed for AI agents"
 license = "MIT"
-repository = "https://github.com/yourusername/browser-ragent"
+repository = "https://github.com/DevMaan707/surfai"
 keywords = ["browser", "automation", "ai", "testing", "web"]
 categories = ["web-programming", "automation"]
 

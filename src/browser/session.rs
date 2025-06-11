@@ -107,38 +107,8 @@ impl<B: BrowserTrait> BrowserSession<B> {
     }
 
     pub async fn navigate_and_wait_reactive(&mut self, url: &str) -> Result<NavigationResult> {
-        let tab = self
-            .tab
-            .as_ref()
-            .ok_or_else(|| crate::errors::BrowserAgentError::NoActiveTab)?;
-
-        println!("🚀 Navigating to: {}", url);
-
-        self.browser.navigate(tab, url).await?;
-
-        let nav_result = NavigationManager::wait_for_navigation_complete(
-            self.browser.as_ref(),
-            tab,
-            self.config.session.navigation_timeout_ms,
-        )
-        .await?;
-
-        println!(
-            "✅ Navigation completed: {} (reason: {}, duration: {}ms)",
-            nav_result.url, nav_result.reason, nav_result.duration_ms
-        );
-
-        self.element_monitor
-            .start_monitoring(self.browser.as_ref(), tab)
-            .await?;
-
-        if self.auto_refresh_enabled {
-            let _ = self.refresh_elements_after_change().await;
-        }
-
-        Ok(nav_result)
+        self.navigate_smart(url).await
     }
-
     pub async fn extract_session(&mut self, domain: &str) -> Result<SessionData> {
         let tab = self
             .tab
@@ -555,7 +525,46 @@ impl<B: BrowserTrait> BrowserSession<B> {
         let tokens: HashMap<String, String> = serde_json::from_value(result)?;
         Ok(tokens)
     }
+    pub async fn navigate_smart(&mut self, url: &str) -> Result<NavigationResult> {
+        let tab = self
+            .tab
+            .as_ref()
+            .ok_or_else(|| crate::errors::BrowserAgentError::NoActiveTab)?;
 
+        println!("🚀 Smart navigating to: {}", url);
+
+        // Start navigation
+        self.browser.navigate(tab, url).await?;
+
+        // Use dynamic navigation detection
+        let nav_result = NavigationManager::wait_for_navigation_complete(
+            self.browser.as_ref(),
+            tab,
+            self.config.session.navigation_timeout_ms,
+        )
+        .await?;
+
+        println!(
+            "✅ Navigation completed: {} | Quality: {} | Load time: {}ms | Reason: {}",
+            nav_result.url,
+            nav_result.load_quality(),
+            nav_result.actual_load_time,
+            nav_result.reason
+        );
+
+        // Only start monitoring if navigation was successful
+        if nav_result.has_content {
+            self.element_monitor
+                .start_monitoring(self.browser.as_ref(), tab)
+                .await?;
+
+            if self.auto_refresh_enabled {
+                let _ = self.refresh_elements_after_change().await;
+            }
+        }
+
+        Ok(nav_result)
+    }
     async fn get_viewport_info(&self) -> Result<ViewportData> {
         let tab = self
             .tab
@@ -1680,5 +1689,36 @@ impl<B: BrowserTrait> SessionTrait<B> for BrowserSession<B> {
             )
             .await?;
         Ok(())
+    }
+}
+impl BrowserSession<crate::browser::ChromeBrowser> {
+    /// Quick builder for common use cases
+    pub async fn quick_start() -> Result<Self> {
+        let config = Config::default();
+        let browser = crate::browser::ChromeBrowser::new();
+        Self::new(browser, config).await
+    }
+
+    /// Quick builder for demos with visible browser
+    pub async fn demo_mode() -> Result<Self> {
+        let mut config = Config::default();
+        config.browser.headless = false;
+        config.browser.viewport.width = 1920;
+        config.browser.viewport.height = 1080;
+        config.dom.enable_ai_labels = true;
+        config.dom.extract_all_elements = true;
+        config.features.enable_highlighting = true;
+        config.features.enable_state_tracking = true;
+
+        let browser = crate::browser::ChromeBrowser::new();
+        let mut session = Self::new(browser, config).await?;
+        session.set_auto_refresh(true);
+        Ok(session)
+    }
+
+    /// Quick builder with custom config
+    pub async fn with_config(config: Config) -> Result<Self> {
+        let browser = crate::browser::ChromeBrowser::new();
+        Self::new(browser, config).await
     }
 }

@@ -1,4 +1,4 @@
-use browser_ragent::core::SessionTrait;
+use surfai::core::SessionTrait;
 mod helpers;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

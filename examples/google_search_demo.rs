@@ -1,13 +1,12 @@
-use browser_ragent::{core::SessionTrait, Config};
 use clap::{Arg, Command};
 use std::io::{self, Write};
-mod helpers;
+use surfai::{browser::session::ElementHighlight, BrowserSession, SessionTrait};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let matches = Command::new("Enhanced Google Search Demo")
+    let matches = Command::new("Smart Google Search Demo")
         .version("1.0")
-        .about("Interactive Google search with element highlighting")
+        .about("Google search with smart navigation and element highlighting")
         .arg(
             Arg::new("headless")
                 .long("headless")
@@ -18,188 +17,89 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let headless = matches.get_flag("headless");
 
-    println!("🚀 Starting Enhanced Google Search Demo");
-    println!("🔧 Headless mode: {}", if headless { "ON" } else { "OFF" });
+    println!("🚀 Smart Google Search Demo");
 
-    let mut config = Config::default();
-    config.browser.headless = headless;
-    config.browser.viewport.width = 1920;
-    config.browser.viewport.height = 1080;
-    config.browser.disable_images = false; // Enable images for better debugging
-    config.dom.enable_ai_labels = true;
-    config.dom.extract_all_elements = true;
-
-    let mut session = helpers::TestHelper::create_test_session_with_config(config).await?;
-
-    println!("📍 Navigating to Google...");
-    session.navigate_and_wait("https://www.google.com").await?;
-    println!("✅ Google loaded successfully!");
-
-    // Wait a moment for page to fully load
-    tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
-
-    // Highlight all interactive elements
-    println!("🎯 Highlighting interactive elements...");
-    let highlights = session.highlight_interactive_elements().await?;
-
-    println!("✨ Found {} interactive elements:", highlights.len());
-    for (i, highlight) in highlights.iter().enumerate().take(10) {
-        println!(
-            "  {}. #{} - {} ({})",
-            i + 1,
-            highlight.element_number,
-            highlight.element_type,
-            highlight.color
-        );
-    }
-
-    if !headless {
-        println!("\n👀 You should now see numbered overlays on the webpage!");
-        println!("🔍 Look for green-highlighted input elements (these are likely search boxes)");
-
-        print!("Press Enter to continue...");
-        io::stdout().flush()?;
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
-    }
-
-    // Find search input (look for input elements)
-    let search_element = highlights
-        .iter()
-        .find(|h| h.element_type == "input")
-        .or_else(|| highlights.iter().find(|h| h.element_type == "textarea"));
-
-    if let Some(search_elem) = search_element {
-        println!(
-            "🔍 Found search element #{} ({})",
-            search_elem.element_number, search_elem.element_type
-        );
-
-        println!("⌨️  Typing search query...");
-        match session
-            .type_in_element_by_number(search_elem.element_number, "rust programming")
-            .await
-        {
-            Ok(_) => {
-                println!("✅ Successfully typed in search box!");
-
-                // Wait a moment to see the typed text
-                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-
-                // Try to find and click search button
-                let search_button = highlights
-                    .iter()
-                    .find(|h| h.element_type == "button" || (h.element_type == "input")); // Google search button is often an input
-
-                if let Some(button) = search_button {
-                    println!("🔘 Found search button #{}", button.element_number);
-                    match session.click_element_by_number(button.element_number).await {
-                        Ok(_) => {
-                            println!("✅ Search submitted!");
-                            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-                        }
-                        Err(e) => {
-                            println!("⚠️  Button click failed: {}", e);
-
-                            // Try pressing Enter instead
-                            println!("🔄 Trying Enter key...");
-                            let enter_script = format!(
-                                r#"
-                                const searchBox = document.querySelector('{}');
-                                if (searchBox) {{
-                                    const event = new KeyboardEvent('keydown', {{ key: 'Enter', bubbles: true }});
-                                    searchBox.dispatchEvent(event);
-                                }}
-                                "#,
-                                search_elem.css_selector.replace("'", "\\'")
-                            );
-                            session.execute_script(&enter_script).await?;
-                        }
-                    }
-                } else {
-                    println!("🔍 No search button found, trying Enter key...");
-                    let enter_script = format!(
-                        r#"
-                        const searchBox = document.querySelector('{}');
-                        if (searchBox) {{
-                            const event = new KeyboardEvent('keydown', {{ key: 'Enter', bubbles: true }});
-                            searchBox.dispatchEvent(event);
-                        }}
-                        "#,
-                        search_elem.css_selector.replace("'", "\\'")
-                    );
-                    session.execute_script(&enter_script).await?;
-                }
-            }
-            Err(e) => {
-                println!("❌ Failed to type in search box: {}", e);
-                println!("🔧 Search element details:");
-                println!("   Number: {}", search_elem.element_number);
-                println!("   Type: {}", search_elem.element_type);
-                println!("   Selector: {}", search_elem.css_selector);
-            }
-        }
+    let mut session = if headless {
+        BrowserSession::quick_start().await?
     } else {
-        println!("❌ No search input found!");
-        println!("🔍 Available elements:");
-        for highlight in highlights.iter().take(5) {
-            println!(
-                "  #{}: {} ({})",
-                highlight.element_number, highlight.element_type, highlight.css_selector
-            );
-        }
-    }
+        BrowserSession::demo_mode().await?
+    };
 
+    let nav_result = session.navigate_smart("https://www.google.com").await?;
+    println!("✅ Google loaded in {}ms", nav_result.duration_ms);
+    let highlights = session.highlight_interactive_elements().await?;
+    println!("🎯 Found {} interactive elements", highlights.len());
+
+    if let Some(search_elem) = highlights.iter().find(|h| h.element_type == "input") {
+        println!("🔍 Using search element #{}", search_elem.element_number);
+        session
+            .type_with_refresh(&search_elem.css_selector, "rust programming")
+            .await?;
+        let enter_script = format!(
+            "document.querySelector('{}').dispatchEvent(new KeyboardEvent('keydown', {{key: 'Enter', bubbles: true}}))",
+            search_elem.css_selector.replace("'", "\\'")
+        );
+        session.execute_script(&enter_script).await?;
+
+        println!("✅ Search submitted");
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    }
     if !headless {
-        println!("\n🎯 Interactive mode:");
-        println!("Enter element number to interact with it, or 'quit' to exit");
-
-        loop {
-            print!("Element number (or 'quit'): ");
-            io::stdout().flush()?;
-
-            let mut input = String::new();
-            io::stdin().read_line(&mut input)?;
-            let input = input.trim();
-
-            if input == "quit" {
-                break;
-            }
-
-            if let Ok(num) = input.parse::<usize>() {
-                if let Some(highlight) = highlights.iter().find(|h| h.element_number == num) {
-                    println!(
-                        "🎯 Element #{}: {} ({})",
-                        num, highlight.element_type, highlight.css_selector
-                    );
-
-                    if highlight.element_type == "input" || highlight.element_type == "textarea" {
-                        print!("Text to type: ");
-                        io::stdout().flush()?;
-                        let mut text_input = String::new();
-                        io::stdin().read_line(&mut text_input)?;
-                        let text = text_input.trim();
-
-                        match session.type_in_element_by_number(num, text).await {
-                            Ok(_) => println!("✅ Text typed successfully!"),
-                            Err(e) => println!("❌ Failed to type: {}", e),
-                        }
-                    } else {
-                        match session.click_element_by_number(num).await {
-                            Ok(_) => println!("✅ Element clicked successfully!"),
-                            Err(e) => println!("❌ Failed to click: {}", e),
-                        }
-                    }
-                } else {
-                    println!("❌ Element #{} not found", num);
-                }
-            }
-        }
+        interactive_mode(&mut session, &highlights).await?;
     }
-
-    session.clear_element_highlights().await?;
     session.close().await?;
     println!("👋 Demo completed!");
+    Ok(())
+}
+
+async fn interactive_mode(
+    session: &mut BrowserSession<surfai::ChromeBrowser>,
+    highlights: &[ElementHighlight],
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n🎮 Interactive Mode");
+    println!("Commands: <number> (click/type) | 'list' (show elements) | 'quit'");
+
+    loop {
+        print!("\n> ");
+        io::stdout().flush()?;
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        let input = input.trim();
+
+        match input {
+            "quit" => break,
+            "list" => {
+                for (i, h) in highlights.iter().enumerate().take(10) {
+                    println!("  {}. #{}: {}", i + 1, h.element_number, h.element_type);
+                }
+            }
+            _ => {
+                if let Ok(num) = input.parse::<usize>() {
+                    if let Some(elem) = highlights.iter().find(|h| h.element_number == num) {
+                        if elem.element_type == "input" || elem.element_type == "textarea" {
+                            print!("Text: ");
+                            io::stdout().flush()?;
+                            let mut text = String::new();
+                            io::stdin().read_line(&mut text)?;
+
+                            match session.type_in_element_by_number(num, text.trim()).await {
+                                Ok(_) => println!("✅ Typed successfully"),
+                                Err(e) => println!("❌ Failed: {}", e),
+                            }
+                        } else {
+                            match session.click_element_by_number_with_refresh(num).await {
+                                Ok(_) => println!("✅ Clicked successfully"),
+                                Err(e) => println!("❌ Failed: {}", e),
+                            }
+                        }
+                    } else {
+                        println!("❌ Element #{} not found", num);
+                    }
+                }
+            }
+        }
+    }
 
     Ok(())
 }

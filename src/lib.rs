@@ -17,13 +17,15 @@ pub mod browser;
 pub mod core;
 pub mod dom;
 pub mod errors;
-
 pub mod utils;
+
+// Re-export commonly used types for convenience
 pub use actions::{ActionRegistry, ActionResult};
-pub use browser::{BrowserSession, ChromeBrowser};
+pub use browser::{AIElement, BrowserSession, ChromeBrowser, LoginConfig, NavigationResult};
 pub use core::{BrowserTrait, Config, DomProcessorTrait, SessionTrait};
 pub use dom::{DomElement, DomProcessor, DomState};
 pub use errors::{BrowserAgentError, Result};
 
-pub type DefaultBrowser = browser::ChromeBrowser;
-pub type DefaultSession = browser::BrowserSession<DefaultBrowser>;
+// Type aliases for convenience
+pub type DefaultBrowser = ChromeBrowser;
+pub type DefaultSession = BrowserSession<ChromeBrowser>;

@@ -1,6 +1,10 @@
-use browser_ragent::core::SessionTrait;
-use browser_ragent::errors::Result;
-use browser_ragent::{Config, DefaultBrowser, DefaultSession, DomState};
+use surfai::{
+    core::config::BrowserConfig,
+    core::SessionTrait,
+    dom::DomElement,
+    errors::{BrowserAgentError, Result},
+    Config, DefaultBrowser, DefaultSession, DomState,
+};
 
 pub struct TestHelper;
 
@@ -8,7 +12,7 @@ impl TestHelper {
     pub async fn create_test_session() -> Result<DefaultSession> {
         let browser = DefaultBrowser::new();
         let config = Config {
-            browser: browser_ragent::core::config::BrowserConfig {
+            browser: BrowserConfig {
                 headless: true,
                 ..Default::default()
             },
@@ -36,10 +40,7 @@ impl TestHelper {
             .count()
     }
 
-    pub fn find_elements_with_text(
-        dom_state: &DomState,
-        text: &str,
-    ) -> Vec<browser_ragent::dom::DomElement> {
+    pub fn find_elements_with_text(dom_state: &DomState, text: &str) -> Vec<DomElement> {
         dom_state
             .find_elements_by_text(text)
             .into_iter()
@@ -109,9 +110,7 @@ impl TestHelper {
     pub async fn assert_element_exists(session: &DefaultSession, selector: &str) -> Result<()> {
         let exists = Self::wait_for_element(session, selector, 5000).await?;
         if !exists {
-            return Err(browser_ragent::errors::BrowserAgentError::ElementNotFound(
-                selector.to_string(),
-            ));
+            return Err(BrowserAgentError::ElementNotFound(selector.to_string()));
         }
         Ok(())
     }
@@ -123,12 +122,10 @@ impl TestHelper {
         let title = title_result.as_str().unwrap_or("");
 
         if !title.to_lowercase().contains(&text.to_lowercase()) {
-            return Err(
-                browser_ragent::errors::BrowserAgentError::ConfigurationError(format!(
-                    "Title '{}' does not contain '{}'",
-                    title, text
-                )),
-            );
+            return Err(BrowserAgentError::ConfigurationError(format!(
+                "Title '{}' does not contain '{}'",
+                title, text
+            )));
         }
         Ok(())
     }
@@ -137,12 +134,10 @@ impl TestHelper {
     pub async fn assert_url_contains(session: &DefaultSession, text: &str) -> Result<()> {
         let url = session.current_url().await?;
         if !url.to_lowercase().contains(&text.to_lowercase()) {
-            return Err(
-                browser_ragent::errors::BrowserAgentError::ConfigurationError(format!(
-                    "URL '{}' does not contain '{}'",
-                    url, text
-                )),
-            );
+            return Err(BrowserAgentError::ConfigurationError(format!(
+                "URL '{}' does not contain '{}'",
+                url, text
+            )));
         }
         Ok(())
     }
@@ -289,13 +284,10 @@ impl TestHelper {
         if result.as_bool().unwrap_or(false) {
             Ok(())
         } else {
-            Err(browser_ragent::errors::BrowserAgentError::ElementNotFound(
-                selector.to_string(),
-            ))
+            Err(BrowserAgentError::ElementNotFound(selector.to_string()))
         }
     }
 
-    /// Enhanced page load waiting
     pub async fn wait_for_page_load(session: &DefaultSession, timeout_ms: u64) -> Result<()> {
         let condition = r#"
             document.readyState === 'complete' &&
