@@ -1,12 +1,12 @@
 use clap::{Arg, Command};
 use std::io::{self, Write};
-use surfai::{browser::session::ElementHighlight, BrowserSession, SessionTrait};
+use surfai::{BrowserSession, SessionTrait};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let matches = Command::new("Smart Google Search Demo")
         .version("1.0")
-        .about("Google search with smart navigation and element highlighting")
+        .about("Google search with static AI analysis")
         .arg(
             Arg::new("headless")
                 .long("headless")
@@ -17,7 +17,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let headless = matches.get_flag("headless");
 
-    println!("🚀 Smart Google Search Demo");
+    println!("🚀 Smart Google Search Demo - STATIC AI Analysis");
 
     let mut session = if headless {
         BrowserSession::quick_start().await?
@@ -28,6 +28,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let nav_result = session.navigate_smart("https://www.google.com").await?;
     println!("✅ Google loaded in {}ms", nav_result.duration_ms);
 
+    static_ai_analysis_demo(&mut session, headless).await?;
+
+    session.close().await?;
+    println!("👋 Demo completed!");
+    Ok(())
+}
+
+async fn static_ai_analysis_demo(
+    session: &mut BrowserSession<surfai::ChromeBrowser>,
+    headless: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n🤖 STATIC AI ANALYSIS MODE");
+    println!("This analyzes elements and provides AI descriptions!");
     let highlights = session.highlight_interactive_elements().await?;
     println!("🎯 Found {} interactive elements", highlights.len());
 
@@ -35,13 +48,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     display_ai_elements(&ai_elements);
 
     if !headless {
-        ai_interactive_mode(&mut session).await?;
+        ai_interactive_mode(session).await?;
     } else {
-        auto_search_demo(&mut session, &ai_elements).await?;
+        auto_search_demo(session, &ai_elements).await?;
     }
 
-    session.close().await?;
-    println!("👋 Demo completed!");
     Ok(())
 }
 
@@ -107,7 +118,6 @@ async fn ai_interactive_mode(
     println!("  - 'refresh' - Refresh elements");
     println!("  - 'quit' - Exit");
 
-    // Initialize current elements
     let mut current_ai_elements = session.get_ai_elements().await?;
 
     loop {
@@ -144,64 +154,80 @@ async fn ai_interactive_mode(
                 display_ai_elements(&current_ai_elements);
             }
             _ => {
-                // Find element by label matching
-                let matching_elements: Vec<&surfai::browser::session::AIElement> =
-                    current_ai_elements
-                        .iter()
-                        .filter(|e| {
-                            e.label
-                                .as_ref()
-                                .map(|l| l.to_lowercase().contains(&input))
-                                .unwrap_or(false)
-                                || e.description.to_lowercase().contains(&input)
-                                || e.element_type.to_lowercase().contains(&input)
-                        })
-                        .collect();
-
-                if matching_elements.is_empty() {
-                    println!("❌ No elements found matching '{}'", input);
-                    continue;
-                }
-
-                if matching_elements.len() == 1 {
-                    let element = matching_elements[0];
-                    println!(
-                        "🎯 Selected: {}",
-                        element.label.as_ref().unwrap_or(&"No label".to_string())
-                    );
-                    println!("📋 Instructions: {}", element.ai_instructions);
-
-                    interact_with_ai_element(session, element).await?;
-                } else {
-                    println!("🔍 Multiple matches found:");
-                    for (i, element) in matching_elements.iter().enumerate() {
-                        println!(
-                            "{}. {}",
-                            i + 1,
-                            element.label.as_ref().unwrap_or(&"No label".to_string())
-                        );
-                    }
-
-                    print!("Choose number (1-{}): ", matching_elements.len());
-                    io::stdout().flush()?;
-
-                    let mut choice_input = String::new();
-                    io::stdin().read_line(&mut choice_input)?;
-
-                    if let Ok(choice) = choice_input.trim().parse::<usize>() {
-                        if choice > 0 && choice <= matching_elements.len() {
-                            let element = matching_elements[choice - 1];
-                            println!(
-                                "🎯 Selected: {}",
-                                element.label.as_ref().unwrap_or(&"No label".to_string())
-                            );
-                            interact_with_ai_element(session, element).await?;
-                        } else {
-                            println!("❌ Invalid choice");
-                        }
-                    }
-                }
+                handle_ai_element_interaction(session, &input, &current_ai_elements).await?;
             }
+        }
+    }
+
+    Ok(())
+}
+
+async fn handle_ai_element_interaction(
+    session: &mut BrowserSession<surfai::ChromeBrowser>,
+    input: &str,
+    current_ai_elements: &[surfai::browser::session::AIElement],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let matching_elements: Vec<&surfai::browser::session::AIElement> = current_ai_elements
+        .iter()
+        .filter(|e| {
+            e.label
+                .as_ref()
+                .map(|l| l.to_lowercase().contains(input))
+                .unwrap_or(false)
+                || e.description.to_lowercase().contains(input)
+                || e.element_type.to_lowercase().contains(input)
+        })
+        .collect();
+
+    if matching_elements.is_empty() {
+        println!("❌ No elements found matching '{}'", input);
+        return Ok(());
+    }
+
+    if matching_elements.len() == 1 {
+        let element = matching_elements[0];
+        println!(
+            "🎯 Selected: {}",
+            element.label.as_ref().unwrap_or(&"No label".to_string())
+        );
+        println!("📋 Instructions: {}", element.ai_instructions);
+        interact_with_ai_element(session, element).await?;
+    } else {
+        handle_multiple_matches(session, matching_elements).await?;
+    }
+
+    Ok(())
+}
+
+async fn handle_multiple_matches(
+    session: &mut BrowserSession<surfai::ChromeBrowser>,
+    matching_elements: Vec<&surfai::browser::session::AIElement>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!("🔍 Multiple matches found:");
+    for (i, element) in matching_elements.iter().enumerate() {
+        println!(
+            "{}. {}",
+            i + 1,
+            element.label.as_ref().unwrap_or(&"No label".to_string())
+        );
+    }
+
+    print!("Choose number (1-{}): ", matching_elements.len());
+    io::stdout().flush()?;
+
+    let mut choice_input = String::new();
+    io::stdin().read_line(&mut choice_input)?;
+
+    if let Ok(choice) = choice_input.trim().parse::<usize>() {
+        if choice > 0 && choice <= matching_elements.len() {
+            let element = matching_elements[choice - 1];
+            println!(
+                "🎯 Selected: {}",
+                element.label.as_ref().unwrap_or(&"No label".to_string())
+            );
+            interact_with_ai_element(session, element).await?;
+        } else {
+            println!("❌ Invalid choice");
         }
     }
 
@@ -218,66 +244,9 @@ async fn interact_with_ai_element(
         .capabilities
         .contains(&"can_receive_text_input".to_string())
     {
-        print!("⌨️  Enter text to type (or press Enter for default): ");
-        io::stdout().flush()?;
-
-        let mut text_input = String::new();
-        io::stdin().read_line(&mut text_input)?;
-        let text = text_input.trim();
-
-        let final_text = if text.is_empty() {
-            match element.element_type.as_str() {
-                s if s.contains("search") => "rust programming",
-                s if s.contains("email") => "test@example.com",
-                s if s.contains("password") => "password123",
-                _ => "test input",
-            }
-        } else {
-            text
-        };
-
-        println!("⌨️  Typing: '{}'", final_text);
-        match session
-            .type_with_refresh(&element.selector, final_text)
-            .await
-        {
-            Ok(_) => println!(
-                "✅ Successfully typed in: {}",
-                element.label.as_ref().unwrap_or(&"element".to_string())
-            ),
-            Err(e) => println!("❌ Failed to type: {}", e),
-        }
-
-        if element.ai_instructions.to_lowercase().contains("search")
-            || element.ai_instructions.to_lowercase().contains("enter")
-        {
-            print!("🔍 Press Enter in this field? (y/n): ");
-            io::stdout().flush()?;
-
-            let mut confirm = String::new();
-            io::stdin().read_line(&mut confirm)?;
-
-            if confirm.trim().to_lowercase().starts_with('y') {
-                let enter_script = format!(
-                    "document.querySelector('{}').dispatchEvent(new KeyboardEvent('keydown', {{key: 'Enter', bubbles: true}}))",
-                    element.selector.replace("'", "\\'")
-                );
-                session.execute_script(&enter_script).await?;
-                println!("✅ Pressed Enter");
-            }
-        }
+        handle_text_input(session, element).await?;
     } else if element.capabilities.contains(&"clickable".to_string()) {
-        println!("🖱️  Clicking element...");
-        match session
-            .click_element_by_number_with_refresh(element.element_number)
-            .await
-        {
-            Ok(_) => println!(
-                "✅ Successfully clicked: {}",
-                element.label.as_ref().unwrap_or(&"element".to_string())
-            ),
-            Err(e) => println!("❌ Failed to click: {}", e),
-        }
+        handle_click(session, element).await?;
     } else {
         println!(
             "ℹ️  This element is for information only: {}",
@@ -286,5 +255,86 @@ async fn interact_with_ai_element(
     }
 
     tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+    Ok(())
+}
+
+async fn handle_text_input(
+    session: &mut BrowserSession<surfai::ChromeBrowser>,
+    element: &surfai::browser::session::AIElement,
+) -> Result<(), Box<dyn std::error::Error>> {
+    print!("⌨️  Enter text to type (or press Enter for default): ");
+    io::stdout().flush()?;
+
+    let mut text_input = String::new();
+    io::stdin().read_line(&mut text_input)?;
+    let text = text_input.trim();
+
+    let final_text = if text.is_empty() {
+        match element.element_type.as_str() {
+            s if s.contains("search") => "rust programming",
+            s if s.contains("email") => "test@example.com",
+            s if s.contains("password") => "password123",
+            _ => "test input",
+        }
+    } else {
+        text
+    };
+
+    println!("⌨️  Typing: '{}'", final_text);
+    match session
+        .type_with_refresh(&element.selector, final_text)
+        .await
+    {
+        Ok(_) => println!(
+            "✅ Successfully typed in: {}",
+            element.label.as_ref().unwrap_or(&"element".to_string())
+        ),
+        Err(e) => println!("❌ Failed to type: {}", e),
+    }
+
+    handle_enter_key(session, element).await?;
+    Ok(())
+}
+
+async fn handle_enter_key(
+    session: &mut BrowserSession<surfai::ChromeBrowser>,
+    element: &surfai::browser::session::AIElement,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if element.ai_instructions.to_lowercase().contains("search")
+        || element.ai_instructions.to_lowercase().contains("enter")
+    {
+        print!("🔍 Press Enter in this field? (y/n): ");
+        io::stdout().flush()?;
+
+        let mut confirm = String::new();
+        io::stdin().read_line(&mut confirm)?;
+
+        if confirm.trim().to_lowercase().starts_with('y') {
+            let enter_script = format!(
+                "document.querySelector('{}').dispatchEvent(new KeyboardEvent('keydown', {{key: 'Enter', bubbles: true}}))",
+                element.selector.replace("'", "\\'")
+            );
+            session.execute_script(&enter_script).await?;
+            println!("✅ Pressed Enter");
+        }
+    }
+    Ok(())
+}
+
+async fn handle_click(
+    session: &mut BrowserSession<surfai::ChromeBrowser>,
+    element: &surfai::browser::session::AIElement,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!("🖱️  Clicking element...");
+    match session
+        .click_element_by_number_with_refresh(element.element_number)
+        .await
+    {
+        Ok(_) => println!(
+            "✅ Successfully clicked: {}",
+            element.label.as_ref().unwrap_or(&"element".to_string())
+        ),
+        Err(e) => println!("❌ Failed to click: {}", e),
+    }
     Ok(())
 }
