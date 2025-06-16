@@ -8,7 +8,21 @@ use std::sync::Arc;
 
 use super::element_monitor::ElementMonitor;
 use super::navigation::{NavigationManager, NavigationResult};
+#[derive(Debug, Clone)]
+pub struct DynamicLabel {
+    pub number: usize,
+    pub element_id: String,
+    pub selector: String,
+    pub label_text: String,
+    pub label_type: String,
+    pub element_description: String,
+}
 
+#[derive(Debug, Clone)]
+pub enum LabelAction {
+    Click,
+    Type(String),
+}
 pub struct BrowserSession<B: BrowserTrait> {
     browser: Arc<B>,
     tab: Option<B::TabHandle>,
@@ -95,7 +109,227 @@ impl<B: BrowserTrait> BrowserSession<B> {
             current_session_data: None,
         })
     }
+    pub async fn add_dynamic_labels(&mut self) -> Result<Vec<DynamicLabel>> {
+        let tab = self
+            .tab
+            .as_ref()
+            .ok_or_else(|| crate::errors::BrowserAgentError::NoActiveTab)?;
+        self.clear_dynamic_labels().await?;
 
+        let dom_state = self.get_page_state(false).await?;
+        let mut labels = Vec::new();
+        let mut label_counter = 1;
+
+        let mut batch_script = String::from(
+            r#"
+                (function() {
+                    // Create style for labels
+                    const style = document.createElement('style');
+                    style.id = 'browser-agent-label-styles';
+                    style.textContent = `
+                        .browser-agent-label {
+                            position: absolute !important;
+                            z-index: 999999 !important;
+                            background: #FF4444 !important;
+                            color: white !important;
+                            font-family: Arial, sans-serif !important;
+                            font-size: 14px !important;
+                            font-weight: bold !important;
+                            padding: 4px 8px !important;
+                            border-radius: 4px !important;
+                            border: 2px solid #CC0000 !important;
+                            box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
+                            pointer-events: none !important;
+                            white-space: nowrap !important;
+                            line-height: 1 !important;
+                            min-width: 20px !important;
+                            text-align: center !important;
+                        }
+                        .browser-agent-label-search {
+                            background: #0066CC !important;
+                            border-color: #004499 !important;
+                        }
+                        .browser-agent-label-button {
+                            background: #00AA00 !important;
+                            border-color: #007700 !important;
+                        }
+                        .browser-agent-label-link {
+                            background: #AA00AA !important;
+                            border-color: #770077 !important;
+                        }
+                    `;
+                    document.head.appendChild(style);
+
+                    const results = [];
+                "#,
+        );
+        for element in &dom_state.clickable_elements {
+            let label_type = self.classify_element_for_labeling(element);
+            let label_text = self.generate_dynamic_label_text(element, label_counter);
+
+            batch_script.push_str(&format!(
+                r#"
+                    try {{
+                        const element = document.querySelector('{}');
+                        if (element) {{
+                            const rect = element.getBoundingClientRect();
+                            if (rect.width > 0 && rect.height > 0) {{
+                                const label = document.createElement('div');
+                                label.className = 'browser-agent-label browser-agent-label-{}';
+                                label.id = 'browser-agent-label-{}';
+                                label.textContent = '{}';
+
+                                // Position the label
+                                label.style.left = (rect.left + window.scrollX - 5) + 'px';
+                                label.style.top = (rect.top + window.scrollY - 25) + 'px';
+
+                                document.body.appendChild(label);
+                                results.push({{
+                                    number: {},
+                                    selector: '{}',
+                                    text: '{}',
+                                    type: '{}'
+                                }});
+                            }}
+                        }}
+                    }} catch(e) {{
+                        console.error('Label error for element {}:', e);
+                    }}
+                    "#,
+                element.css_selector.replace("'", "\\'"),
+                label_type,
+                label_counter,
+                label_text,
+                label_counter,
+                element.css_selector.replace("'", "\\'"),
+                label_text,
+                label_type,
+                label_counter
+            ));
+
+            labels.push(DynamicLabel {
+                number: label_counter,
+                element_id: element.id.clone(),
+                selector: element.css_selector.clone(),
+                label_text: label_text.clone(),
+                label_type: label_type.clone(),
+                element_description: self.generate_element_description(element),
+            });
+
+            label_counter += 1;
+        }
+
+        batch_script.push_str(" return results; })()");
+
+        let result = self.browser.execute_script(tab, &batch_script).await?;
+        println!(
+            "✅ Added {} dynamic labels",
+            result.as_array().map(|a| a.len()).unwrap_or(0)
+        );
+
+        Ok(labels)
+    }
+    pub async fn clear_dynamic_labels(&self) -> Result<()> {
+        let tab = self
+            .tab
+            .as_ref()
+            .ok_or_else(|| crate::errors::BrowserAgentError::NoActiveTab)?;
+
+        let clear_script = r#"
+                (function() {
+                    // Remove all labels
+                    const labels = document.querySelectorAll('.browser-agent-label');
+                    labels.forEach(label => label.remove());
+
+                    // Remove styles
+                    const styles = document.getElementById('browser-agent-label-styles');
+                    if (styles) styles.remove();
+
+                    return labels.length;
+                })()
+            "#;
+
+        self.browser.execute_script(tab, clear_script).await?;
+        Ok(())
+    }
+
+    pub async fn interact_with_labeled_element(
+        &mut self,
+        label_number: usize,
+        action: LabelAction,
+    ) -> Result<()> {
+        match action {
+            LabelAction::Click => {
+                self.click_element_by_number_with_refresh(label_number)
+                    .await
+            }
+            LabelAction::Type(text) => self.type_in_element_by_number(label_number, &text).await,
+        }
+    }
+
+    pub async fn get_labeled_element_info(&self, label_number: usize) -> Option<String> {
+        None
+    }
+
+    fn classify_element_for_labeling(&self, element: &crate::dom::DomElement) -> String {
+        if let Some(name) = element.attributes.get("name") {
+            if name == "q" || element.attributes.get("role") == Some(&"searchbox".to_string()) {
+                return "search".to_string();
+            }
+        }
+
+        match element.tag_name.as_str() {
+            "input" => {
+                let default_type = "text".to_string();
+                let input_type = element.attributes.get("type").unwrap_or(&default_type);
+                match input_type.as_str() {
+                    "search" => "search".to_string(),
+                    "submit" | "button" => "button".to_string(),
+                    _ => "input".to_string(),
+                }
+            }
+            "button" => "button".to_string(),
+            "a" => "link".to_string(),
+            _ => "interactive".to_string(),
+        }
+    }
+
+    fn generate_dynamic_label_text(
+        &self,
+        element: &crate::dom::DomElement,
+        number: usize,
+    ) -> String {
+        // Create concise labels for the webpage overlay
+        if let Some(name) = element.attributes.get("name") {
+            if name == "q" {
+                return format!("{} 🔍", number);
+            }
+        }
+
+        if let Some(aria_label) = element.attributes.get("aria-label") {
+            if aria_label.to_lowercase().contains("search") {
+                return format!("{} 🔍", number);
+            }
+        }
+
+        match element.tag_name.as_str() {
+            "input" => {
+                let default_type = "text".to_string();
+                let input_type = element.attributes.get("type").unwrap_or(&default_type);
+                match input_type.as_str() {
+                    "search" => format!("{} 🔍", number),
+                    "submit" | "button" => format!("{} ▶", number),
+                    "email" => format!("{} ✉", number),
+                    "password" => format!("{} 🔒", number),
+                    _ => format!("{} ✏", number),
+                }
+            }
+            "button" => format!("{} ▶", number),
+            "a" => format!("{} 🔗", number),
+            "select" => format!("{} ▼", number),
+            _ => number.to_string(),
+        }
+    }
     pub async fn new_with_session(
         mut browser: B,
         config: Config,
