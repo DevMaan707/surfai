@@ -1,4 +1,4 @@
-# Surf-New: Advanced Browser Automation Framework
+# SurfAI: Advanced Browser Automation Framework
 
 A powerful Rust-based browser automation framework with human-like behavior simulation and stealth capabilities. Built on top of `chromiumoxide` with advanced scripting, element interaction, and MCP (Model Context Protocol) server integration.
 
@@ -32,7 +32,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-surf-new = "0.1.0"
+surfai = "0.1.2"
 tokio = { version = "1.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -43,7 +43,7 @@ serde_json = "1.0"
 ### Basic Browser Automation
 
 ```rust
-use surf_new::*;
+use surfai::*;
 
 #[tokio::main]
 async fn main() -> Result> {
@@ -75,7 +75,7 @@ async fn main() -> Result> {
 ### Human-like Google Search
 
 ```rust
-use surf_new::*;
+use surfai::*;
 
 #[tokio::main]
 async fn main() -> Result> {
@@ -116,7 +116,7 @@ The framework includes a built-in MCP (Model Context Protocol) server for seamle
 ### Starting the MCP Server
 
 ```rust
-use surf_new::mcp::MCPBrowserServer;
+use surfai::mcp::MCPBrowserServer;
 
 #[tokio::main]
 async fn main() -> Result> {
@@ -309,7 +309,7 @@ Close a browser session and clean up resources.
 ### MCP Integration Example
 
 ```rust
-use surf_new::mcp::*;
+use surfai::mcp::*;
 
 async fn ai_agent_workflow() -> Result> {
     let server = MCPBrowserServer::new();
@@ -472,7 +472,7 @@ cargo run --example human_google_search
 The framework uses a comprehensive error system:
 
 ```rust
-use surf_new::BrowserResult;
+use surfai::BrowserResult;
 
 match browser.new_page("https://example.com").await {
     Ok(page) => {

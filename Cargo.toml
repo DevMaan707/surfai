@@ -1,13 +1,14 @@
+
 [package]
 name = "surfai"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
-authors = ["DevMaan707 <dev.maan707@gmail.com>"]
+authors = ["DevMaan707 "]
 description = "Advanced browser automation library with human-like interactions and stealth capabilities for web scraping"
 documentation = "https://docs.rs/surfai"
 homepage = "https://github.com/DevMaan707/surfai"
 repository = "https://github.com/DevMaan707/surfai"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 readme = "README.md"
 keywords = ["browser", "automation", "scraping", "stealth", "chromium"]
 categories = ["web-programming", "api-bindings", "development-tools"]
@@ -24,13 +25,14 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = ["stealth", "human-interaction"]
+default = ["stealth", "human-interaction", "persistence", "screenshot"]
 stealth = []
 human-interaction = ["rand"]
 proxy-support = []
 screenshot = ["base64"]
 persistence = ["uuid", "chrono"]
 ai-integration = ["rgenai"]
+mcp-server = ["uuid", "chrono", "base64"]
 full = [
     "stealth",
     "human-interaction",
@@ -38,6 +40,7 @@ full = [
     "screenshot",
     "persistence",
     "ai-integration",
+    "mcp-server",
 ]
 
 [dependencies]
@@ -114,8 +117,14 @@ name = "proxy_rotation"
 path = "examples/proxy_rotation.rs"
 required-features = ["proxy-support"]
 
+[[example]]
+name = "mcp_server_example"
+path = "examples/mcp_server_example.rs"
+required-features = ["mcp-server"]
+
 # Library configuration
 [lib]
+
 name = "surfai"
 path = "src/lib.rs"
 doc-scrape-examples = true
