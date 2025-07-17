@@ -1,35 +1,121 @@
 [package]
 name = "surfai"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
+authors = ["DevMaan707 <dev.maan707@gmail.com>"]
+description = "Advanced browser automation library with human-like interactions and stealth capabilities for web scraping"
+documentation = "https://docs.rs/surfai"
+homepage = "https://github.com/DevMaan707/surfai"
+repository = "https://github.com/DevMaan707/surfai"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+keywords = ["browser", "automation", "scraping", "stealth", "chromium"]
+categories = ["web-programming", "api-bindings", "development-tools"]
+exclude = [
+    "browser_profiles/*",
+    "screenshots/*",
+    ".github/*",
+    "docs/*",
+    "*.log",
+]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+default = ["stealth", "human-interaction"]
+stealth = []
+human-interaction = ["rand"]
+proxy-support = []
+screenshot = ["base64"]
+persistence = ["uuid", "chrono"]
+ai-integration = ["rgenai"]
+full = [
+    "stealth",
+    "human-interaction",
+    "proxy-support",
+    "screenshot",
+    "persistence",
+    "ai-integration",
+]
 
 [dependencies]
 chromiumoxide = "0.5"
 chromiumoxide_cdp = "0.5"
 futures = "0.3"
 tokio = { version = "1.0", features = ["full"] }
-rgenai = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 anyhow = "1.0"
 async-trait = "0.1"
-rand = "0.8"
 url = "2.0"
-uuid = { version = "1.17.0", features = ["v4"] }
-chrono = { version = "0.4", features = ["serde"] }
-base64 = "0.21"
+thiserror = "1.0"
+
+# Optional dependencies
+rgenai = { version = "0.1", optional = true }
+rand = { version = "0.8", optional = true }
+uuid = { version = "1.17.0", features = ["v4"], optional = true }
+chrono = { version = "0.4", features = ["serde"], optional = true }
+base64 = { version = "0.21", optional = true }
+
 [dev-dependencies]
 tokio-test = "0.4"
+criterion = "0.5"
+tempfile = "3.0"
+env_logger = "0.10"
 
+# Benchmarks
+[[bench]]
+name = "automation_benchmarks"
+harness = false
+
+# Examples
 [[example]]
 name = "basic_usage"
-path = "example/basic_usage.rs"
+path = "examples/basic_usage.rs"
+doc-scrape-examples = true
+
 [[example]]
-name = "label"
-path = "example/label_elements.rs"
+name = "label_elements"
+path = "examples/label_elements.rs"
+
 [[example]]
-name = "gs"
-path = "example/google_search.rs"
+name = "google_search"
+path = "examples/google_search.rs"
+
 [[example]]
-name = "human-gs"
-path = "example/human_google_search.rs"
+name = "human_google_search"
+path = "examples/human_google_search.rs"
+required-features = ["human-interaction", "stealth"]
+
+[[example]]
+name = "stealth_browsing"
+path = "examples/stealth_browsing.rs"
+required-features = ["stealth"]
+
+[[example]]
+name = "screenshot_capture"
+path = "examples/screenshot_capture.rs"
+required-features = ["screenshot"]
+
+[[example]]
+name = "persistent_sessions"
+path = "examples/persistent_sessions.rs"
+required-features = ["persistence"]
+
+[[example]]
+name = "ai_powered_automation"
+path = "examples/ai_powered_automation.rs"
+required-features = ["ai-integration"]
+
+[[example]]
+name = "proxy_rotation"
+path = "examples/proxy_rotation.rs"
+required-features = ["proxy-support"]
+
+# Library configuration
+[lib]
+name = "surfai"
+path = "src/lib.rs"
+doc-scrape-examples = true
