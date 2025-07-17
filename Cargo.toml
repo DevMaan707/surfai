@@ -1,0 +1,35 @@
+[package]
+name = "surfai"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+chromiumoxide = "0.5"
+chromiumoxide_cdp = "0.5"
+futures = "0.3"
+tokio = { version = "1.0", features = ["full"] }
+rgenai = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+async-trait = "0.1"
+rand = "0.8"
+url = "2.0"
+uuid = { version = "1.17.0", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+base64 = "0.21"
+[dev-dependencies]
+tokio-test = "0.4"
+
+[[example]]
+name = "basic_usage"
+path = "example/basic_usage.rs"
+[[example]]
+name = "label"
+path = "example/label_elements.rs"
+[[example]]
+name = "gs"
+path = "example/google_search.rs"
+[[example]]
+name = "human-gs"
+path = "example/human_google_search.rs"
